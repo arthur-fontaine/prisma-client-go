@@ -44,8 +44,8 @@ func TestObjects(t *testing.T) {
 			}
 
 			user, err := client.User.CreateOne(
-				User.Email.Set("id1"),
-				User.Username.Set("id1"),
+				User.Email.Set("email1"),
+				User.Username.Set("username1"),
 				User.Info.Set(InfoType{
 					Age:    5,
 					AgeOpt: 3,
