@@ -5,11 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +21,15 @@ import (
 )
 
 func (e *QueryEngine) Connect() error {
+	e.closed = make(chan interface{})
+
+	success := false
+	defer func() {
+		if !success {
+			close(e.closed)
+		}
+	}()
+
 	logger.Debug.Printf("ensure query engine binary...")
 
 	_ = godotenv.Load(".env")
@@ -41,9 +48,15 @@ func (e *QueryEngine) Connect() error {
 	}
 
 	logger.Debug.Printf("connecting took %s", time.Since(startEngine))
-	logger.Debug.Printf("connected.")
+
+	if e.lastEngineError != "" {
+		return fmt.Errorf("query engine errored: %w", fmt.Errorf(e.lastEngineError))
+	}
 
 	e.connected = true
+	success = true
+
+	logger.Debug.Printf("connected.")
 
 	return nil
 }
@@ -68,6 +81,8 @@ func (e *QueryEngine) Disconnect() error {
 			return fmt.Errorf("wait for process: %w", err)
 		}
 	}
+
+	close(e.closed)
 
 	logger.Debug.Printf("disconnected.")
 	return nil
@@ -188,18 +203,7 @@ func (e *QueryEngine) GetEncodedDatasources() (string, error) {
 	}
 
 	for i := range datasources {
-		if env := datasources[i].URL.FromEnvVar; env != "" {
-			url := os.Getenv(env)
-			if url == "" {
-				log.Printf("WARNING: env var %s which was defined in the Prisma schema is not set", env)
-				continue
-				// return "", fmt.Errorf("env var %s which was defined in the Prisma schema is not set", env)
-			}
-			overrides = append(overrides, DatasourceOverride{
-				Name: datasources[i].Name.String(),
-				URL:  url,
-			})
-		} else {
+		if val := datasources[i].URL.Value; val != "" {
 			overrides = append(overrides, DatasourceOverride{
 				Name: datasources[i].Name.String(),
 				URL:  e.datasourceURL,
@@ -215,8 +219,6 @@ func (e *QueryEngine) GetEncodedDatasources() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal datasources: %w", err)
 	}
-
-	logger.Debug.Printf("datasources: %s", string(raw))
 
 	datasourcesBase64 := base64.URLEncoding.EncodeToString(raw)
 
@@ -235,8 +237,15 @@ func (e *QueryEngine) spawn(file string) error {
 
 	e.cmd = exec.Command(file, "-p", port, "--enable-raw-queries")
 
+	e.cmd.SysProcAttr = getSysProcAttr()
+
 	e.cmd.Stdout = os.Stdout
-	e.cmd.Stderr = os.Stderr
+
+	e.onEngineError = make(chan string)
+
+	if err := e.streamStderr(e.cmd, e.onEngineError); err != nil {
+		return fmt.Errorf("setup stream: %w", err)
+	}
 
 	e.cmd.Env = append(
 		os.Environ(),
@@ -276,12 +285,18 @@ func (e *QueryEngine) spawn(file string) error {
 
 	logger.Debug.Printf("connecting to engine...")
 
-	ctx := context.Background()
-
 	// send a basic readiness healthcheck and retry if unsuccessful
 	var connectErr error
 	for i := 0; i < 100; i++ {
-		body, err := e.Request(ctx, "GET", "/status", map[string]interface{}{}, false)
+		e.mu.Lock()
+		// return an error early if an engine error already happened
+		if e.lastEngineError != "" {
+			e.mu.Unlock()
+			return fmt.Errorf("query engine errored: %w", fmt.Errorf(e.lastEngineError))
+		}
+		e.mu.Unlock()
+
+		body, err := e.Request(context.Background(), "GET", "/status", map[string]interface{}{}, false)
 		if err != nil {
 			connectErr = err
 			logger.Debug.Printf("could not connect; retrying...")
@@ -293,9 +308,7 @@ func (e *QueryEngine) spawn(file string) error {
 			Status string `json:"status"`
 		}
 
-		// the response is a JSON in a string, so unquote it
-		unquoted, _ := strconv.Unquote(string(body))
-		if err := json.Unmarshal([]byte(unquoted), &response); err != nil {
+		if err := json.Unmarshal(body, &response); err != nil {
 			connectErr = err
 			logger.Debug.Printf("could not unmarshal response %s; retrying...", body)
 			time.Sleep(50 * time.Millisecond)

@@ -14,13 +14,6 @@ import (
 	"github.com/steebchen/prisma-client-go/logger"
 )
 
-// PrismaVersion is a hardcoded version of the Prisma CLI.
-const PrismaVersion = "5.5.2"
-
-// EngineVersion is a hardcoded version of the Prisma Engine.
-// The versions can be found under https://github.com/prisma/prisma-engines/commits/main
-const EngineVersion = "aebc046ce8b88ebbcb45efe31cbe7d06fd6abc0a"
-
 // PrismaURL points to an S3 bucket URL where the CLI binaries are stored.
 var PrismaURL = "https://packaged-cli.prisma.sh/%s-%s-%s-%s.gz"
 
@@ -156,7 +149,8 @@ func DownloadCLI(toDir string) error {
 	logger.Debug.Printf("ensuring CLI %s from %s to %s", cli, url, to)
 
 	if _, err := os.Stat(to); os.IsNotExist(err) {
-		logger.Info.Printf("prisma cli doesn't exist, fetching... (this might take a few minutes)")
+		filename := path.Base(to)
+		logger.Info.Printf("prisma cli binary %s doesn't exist, fetching... (this might take a few minutes)", filename)
 
 		if err := download(url, to); err != nil {
 			return fmt.Errorf("could not download %s to %s: %w", url, to, err)

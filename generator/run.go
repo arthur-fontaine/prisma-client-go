@@ -8,7 +8,6 @@ import (
 	"go/format"
 	"os"
 	"path"
-	"runtime"
 	"strings"
 	"text/template"
 
@@ -40,6 +39,10 @@ func addDefaults(input *Root) {
 func Run(input *Root) error {
 	addDefaults(input)
 
+	if input.Version != binaries.EngineVersion {
+		fmt.Printf("\nwarning: prisma CLI version mismatch detected. CLI version: %s, internal version: %s (%s); please see https://github.com/steebchen/prisma-client-go/issues/1099 for details\n\n", input.Version, binaries.EngineVersion, binaries.PrismaVersion)
+	}
+
 	if input.Generator.Config.DisableGitignore != "true" && input.Generator.Config.DisableGoBinaries != "true" {
 		logger.Debug.Printf("writing gitignore file")
 		// generate a gitignore into the folder
@@ -69,27 +72,35 @@ var templateFS embed.FS
 func generateClient(input *Root) error {
 	var buf bytes.Buffer
 
-	tpl, err := template.ParseFS(templateFS, "templates/*.gotpl", "templates/actions/*.gotpl")
-	if err != nil {
-		return fmt.Errorf("could not parse template fs: %w", err)
+	// manually define the order of the templates for consistent output
+	files := []string{
+		"_header",
+		"client",
+		"enums",
+		"errors",
+		"fields",
+		"mock",
+		"models",
+		"query",
+		"actions/actions",
+		"actions/create",
+		"actions/find",
+		"actions/transaction",
+		"actions/upsert",
+		"actions/raw",
 	}
 
-	// Run header template first
-	header, err := template.ParseFS(templateFS, "templates/_header.gotpl")
-	if err != nil {
-		return fmt.Errorf("could not find header template: %w", err)
-	}
-
-	if err := header.Execute(&buf, input); err != nil {
-		return fmt.Errorf("could not write header template: %w", err)
+	var templates []*template.Template
+	for _, file := range files {
+		t, err := template.ParseFS(templateFS, "templates/"+file+".gotpl")
+		if err != nil {
+			return fmt.Errorf("could not parse template fs: %w", err)
+		}
+		templates = append(templates, t)
 	}
 
 	// Then process all remaining templates
-	for _, tpl := range tpl.Templates() {
-		if strings.Contains(tpl.Name(), "_") {
-			continue
-		}
-
+	for _, tpl := range templates {
 		buf.Write([]byte(fmt.Sprintf("// --- template %s ---\n", tpl.Name())))
 
 		if err := tpl.Execute(&buf, input); err != nil {
@@ -179,14 +190,11 @@ func generateBinaries(input *Root) error {
 
 func generateQueryEngineFiles(binaryTargets []string, pkg, outputDir string) error {
 	for _, name := range binaryTargets {
-		pt := runtime.GOOS
-		if strings.Contains(name, "debian") || strings.Contains(name, "rhel") || strings.Contains(name, "musl") {
-			pt = "linux"
-		}
-
 		if name == "native" {
 			name = platform.BinaryPlatformNameStatic()
 		}
+
+		info := platform.MapBinaryTarget(name)
 
 		name = TransformBinaryTarget(name)
 
@@ -196,7 +204,7 @@ func generateQueryEngineFiles(binaryTargets []string, pkg, outputDir string) err
 		to := path.Join(outputDir, filename)
 
 		// TODO check if already exists, but make sure version matches
-		if err := bindata.WriteFile(name, pkg, pt, enginePath, to); err != nil {
+		if err := bindata.WriteFile(name, pkg, enginePath, to, info); err != nil {
 			return fmt.Errorf("generate write go file: %w", err)
 		}
 

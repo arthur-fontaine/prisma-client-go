@@ -107,6 +107,39 @@
 				return r
 			}
 
+			func (r {{ $result }}) Select(params ...{{ $model.Name.GoLowerCase }}PrismaFields) {{ $result }} {
+				var outputs []builder.Output
+
+				for _, param := range params {
+					outputs = append(outputs, builder.Output{
+						Name: string(param),
+					})
+				}
+
+				r.query.Outputs = outputs
+
+				return r
+			}
+
+			func (r {{ $result }}) Omit(params ...{{ $model.Name.GoLowerCase }}PrismaFields) {{ $result }} {
+				var outputs []builder.Output
+
+				var raw []string
+				for _, param := range params {
+					raw = append(raw, string(param))
+				}
+
+				for _, output := range {{ $model.Name.GoLowerCase }}Output {
+					if !slices.Contains(raw, output.Name) {
+						outputs = append(outputs, output)
+					}
+				}
+
+				r.query.Outputs = outputs
+
+				return r
+			}
+
 			{{ if $v.List }}
 				func (r {{ $result }}) OrderBy(params ...{{ $orderByParam }}) {{ $result }} {
 					var fields []builder.Field
@@ -248,8 +281,8 @@
 					return &v, nil
 				}
 
-				func (r {{ $updateResult }}) Tx() {{ $name }}{{ $txResult }}TxResult {
-					v := New{{ $name }}{{ $txResult }}TxResult()
+				func (r {{ $updateResult }}) Tx() {{ $model.Name.GoCase }}{{ $txResult }}TxResult {
+					v := new{{ $model.Name.GoCase }}{{ $txResult }}TxResult()
 					v.query = r.query
 					v.query.TxResult = make(chan []byte, 1)
 					return v
@@ -286,8 +319,8 @@
 					return &v, nil
 				}
 
-				func (r {{ $deleteResult }}) Tx() {{ $name }}{{ $txResult }}TxResult {
-					v := New{{ $name }}{{ $txResult }}TxResult()
+				func (r {{ $deleteResult }}) Tx() {{ $model.Name.GoCase }}{{ $txResult }}TxResult {
+					v := new{{ $model.Name.GoCase }}{{ $txResult }}TxResult()
 					v.query = r.query
 					v.query.TxResult = make(chan []byte, 1)
 					return v

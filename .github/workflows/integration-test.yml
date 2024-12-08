@@ -2,17 +2,20 @@ name: integration test all
 on: pull_request
 jobs:
   integration:
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-13]
+
+    name: integration-${{ contains(matrix.os, 'ubuntu') && 'ubuntu' || contains(matrix.os, 'windows') && 'windows' || contains(matrix.os, 'macos') && 'macos' }}
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: changes
         with:
           filters: |
@@ -27,15 +30,9 @@ jobs:
       # fix for GitHub actions MacOS
       - name: Setup docker
         if: runner.os == 'macos' && steps.changes.outputs.go == 'true'
-        run: |
-          brew install docker
-          colima start
+        uses: douglascamata/setup-docker-macos-action@v1-alpha
 
-          # For testcontainers to find the Colima socket
-          # https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#cannot-connect-to-the-docker-daemon-at-unixvarrundockersock-is-the-docker-daemon-running
-          sudo ln -sf $HOME/.colima/default/docker.sock /var/run/docker.sock
-
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
@@ -48,13 +45,13 @@ jobs:
         run: docker build . --build-arg IMAGE="golang:1" -f test/integration/integration.dockerfile -t integration && docker run integration
 
   integration-alpine:
-    name: "integration (alpine)"
+    name: "integration-alpine"
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: changes
         with:
           filters: |
@@ -66,18 +63,7 @@ jobs:
               - '**/*.sum'
               - '**/*.work'
 
-      # fix for GitHub actions MacOS
-      - name: Setup docker
-        if: runner.os == 'macos' && steps.changes.outputs.go == 'true'
-        run: |
-          brew install docker
-          colima start
-
-          # For testcontainers to find the Colima socket
-          # https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#cannot-connect-to-the-docker-daemon-at-unixvarrundockersock-is-the-docker-daemon-running
-          sudo ln -sf $HOME/.colima/default/docker.sock /var/run/docker.sock
-
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod

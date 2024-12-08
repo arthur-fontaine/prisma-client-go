@@ -3,6 +3,7 @@ package engine
 import (
 	"net/http"
 	"os/exec"
+	"sync"
 )
 
 func NewQueryEngine(schema string, hasBinaryTargets bool, datasources string, datasourceURL string) *QueryEngine {
@@ -43,6 +44,17 @@ type QueryEngine struct {
 
 	// disconnected indicates whether the user has called Disconnect()
 	disconnected bool
+
+	// closed keeps track of query engine status
+	closed chan interface{}
+
+	// onEngineError is a listener on the query engine stderr output
+	onEngineError chan string
+
+	// lastEngineError contains the last received error
+	lastEngineError string
+
+	mu sync.Mutex
 }
 
 func (e *QueryEngine) Name() string {
