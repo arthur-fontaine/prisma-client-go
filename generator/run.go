@@ -81,6 +81,7 @@ func generateClient(input *Root) error {
 		"fields",
 		"mock",
 		"models",
+		"types",
 		"query",
 		"actions/actions",
 		"actions/create",
