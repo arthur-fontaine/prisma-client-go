@@ -4,6 +4,22 @@ var countOutput = []builder.Output{
 	{Name: "count"},
 }
 
+{{ range $type := $.DMMF.Datamodel.Types }}
+	{{ $name := $type.Name.GoLowerCase }}
+	var {{ $name }}Output = []builder.Output{
+		{{- range $i := $type.Fields }}
+			{{- if $i.IncludeInStruct }}
+				{
+					Name: "{{ $i.Name }}",
+					{{- if $i.IsObjectType }}
+						Outputs: {{ $i.Type.GoLowerCase }}Output,
+					{{- end }}
+				},
+			{{- end }}
+		{{- end }}
+	}
+{{ end }}
+
 {{ range $model := $.DMMF.Datamodel.Models }}
 	{{ $name := $model.Name.GoLowerCase }}
 	{{ $ns := (print $name "Actions") }}
@@ -16,7 +32,12 @@ var countOutput = []builder.Output{
 	var {{ $name }}Output = []builder.Output{
 		{{- range $i := $model.Fields }}
 			{{- if $i.IncludeInStruct }}
-				{Name: "{{ $i.Name }}"},
+				{
+					Name: "{{ $i.Name }}",
+					{{- if $i.IsObjectType }}
+						Outputs: {{ $i.Type.GoLowerCase }}Output,
+					{{- end }}
+				},
 			{{- end }}
 		{{- end }}
 	}
