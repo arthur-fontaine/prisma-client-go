@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -339,6 +340,38 @@ func (q Query) Do(ctx context.Context, payload interface{}, into interface{}) er
 }
 
 func Value(value interface{}) []byte {
+	rv := reflect.ValueOf(value)
+
+	if rv.Kind() == reflect.Struct {
+		var builder strings.Builder
+		builder.WriteString("{")
+		for i := 0; i < rv.NumField(); i++ {
+			key := rv.Type().Field(i).Tag.Get("json")
+			fieldValue := rv.Field(i).Interface()
+
+			if i > 0 {
+				builder.WriteString(",")
+			}
+			builder.WriteString(fmt.Sprintf("%v:", key))
+			builder.Write(Value(fieldValue))
+		}
+		builder.WriteString("}")
+		return []byte(builder.String())
+	}
+
+	if rv.Kind() == reflect.Slice {
+		var builder strings.Builder
+		builder.WriteString("[")
+		for i := 0; i < rv.Len(); i++ {
+			if i > 0 {
+				builder.WriteString(",")
+			}
+			builder.Write(Value(rv.Index(i).Interface()))
+		}
+		builder.WriteString("]")
+		return []byte(builder.String())
+	}
+
 	v, err := json.Marshal(value)
 	if err != nil {
 		panic(err)
